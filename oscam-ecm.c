@@ -2102,7 +2102,7 @@ void chk_dcw(struct s_ecm_answer *ea)
 				cs_hexdump(0, ert->cw, 16, cw2, sizeof(cw2));
 			}
 #endif
-			char ip1[INET6_ADDRSTRLEN] = "", ip2[INET6_ADDRSTRLEN] = "";
+			char ip1[20] = "", ip2[20] = "";
 			if(ea->reader && check_client(ea->reader->client)) { cs_strncpy(ip1, cs_inet_ntoa(ea->reader->client->ip), sizeof(ip1)); }
 			if(ert->cacheex_src) { cs_strncpy(ip2, cs_inet_ntoa(ert->cacheex_src->ip), sizeof(ip2)); }
 			else if(ert->selected_reader && check_client(ert->selected_reader->client)) { cs_strncpy(ip2, cs_inet_ntoa(ert->selected_reader->client->ip), sizeof(ip2)); }
@@ -2418,6 +2418,10 @@ int32_t write_ecm_answer(struct s_reader *reader, ECM_REQUEST *er, int8_t rc, ui
 		return 0;
 	}
 
+	// Special checks for rc
+	// Skip check for BISS1 - cw could be zero but still catch cw=0 by anticascading
+	// Skip check for BISS2 - we use the extended cw, so the "simple" cw is always zero
+
 	// bad/wrong chksum/ecm
 	if(rc == E_NOTFOUND && rcEx == E2_WRONG_CHKSUM)
 	{
@@ -2437,7 +2441,7 @@ int32_t write_ecm_answer(struct s_reader *reader, ECM_REQUEST *er, int8_t rc, ui
 		}
 	}
 
-	if(rc < E_NOTFOUND && cw && chk_is_null_CW(cw))
+	if(rc < E_NOTFOUND && cw && chk_is_null_CW(cw) && !caid_is_biss(er->caid))
 	{
 		rc = E_NOTFOUND;
 		cs_log_dbg(D_TRACE | D_LB, "WARNING: reader %s send fake cw, set rc=E_NOTFOUND!", reader ? reader->label : "-");
@@ -2624,7 +2628,9 @@ int32_t write_ecm_answer(struct s_reader *reader, ECM_REQUEST *er, int8_t rc, ui
 	if(!ea->is_pending) // not for pending ea - only once for ea
 	{
 		// cache update
-		if(ea && (ea->rc < E_NOTFOUND) && !chk_is_null_CW(ea->cw))
+		// Skip check for BISS1 - cw could be indeed zero
+		// Skip check for BISS2 - we use the extended cw, so the "simple" cw is always zero
+		if(ea && (ea->rc < E_NOTFOUND) && (!chk_is_null_CW(ea->cw) && !caid_is_biss(er->caid)))
 		{
 #ifdef CS_CACHEEX_AIO
 			int32_t ecmtime = ea->ecm_time;
@@ -3267,7 +3273,9 @@ void get_cw(struct s_client *client, ECM_REQUEST *er)
 	}
 
 	// Check for odd/even byte
-	if(get_odd_even(er) == 0)
+	// Don't check for BISS1 and BISS2 mode 1/E or fake caid (ECM is fake for them)
+	// Don't check for BISS2 mode CA (ECM table is always 0x80)
+	if(!caid_is_biss(er->caid) && !caid_is_fake(er->caid) && get_odd_even(er) == 0)
 	{
 		cs_log_dbg(D_TRACE, "warning: ecm with null odd/even byte from %s", (check_client(er->client) ? er->client->account->usr : "-"));
 		er->rc = E_INVALID;

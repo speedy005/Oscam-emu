@@ -186,10 +186,10 @@ static void parse_index_file(char *filename)
 
 		if(deps && strlen(deps) && is_defined){
 			if(strstr(deps, ",")){
-				int def_found=0;
+				int i,def_found=0;
 				char *ptr, *saveptr1 = NULL;
 				char *deps_sep = strdup(deps);
-	 			for(ptr = strtok_r(deps_sep, ",", &saveptr1); ptr; ptr = strtok_r(NULL, ",", &saveptr1))
+				for(i = 0, ptr = strtok_r(deps_sep, ",", &saveptr1); ptr; ptr = strtok_r(NULL, ",", &saveptr1), i++)
 	 			{
 					if(strstr((char *)is_defined, ptr))
 	 					{ def_found = 1; }
