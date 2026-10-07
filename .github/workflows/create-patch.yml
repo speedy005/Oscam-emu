@@ -17,6 +17,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ==========================================================
+      # Aktuelles Repository
+      # ==========================================================
       - name: Checkout master
         uses: actions/checkout@v4
         with:
@@ -24,14 +27,26 @@ jobs:
           fetch-depth: 0
           token: ${{ github.token }}
 
+      # ==========================================================
+      # Separates Repository:
+      # oscam-mirror/oscam-emu-patch
+      #
+      # Hier NICHT github.token verwenden.
+      # ACTIONS_TOKEN wird benötigt, wenn dieses Repository
+      # nicht über den normalen Workflow-Token erreichbar ist
+      # bzw. dort geschrieben werden soll.
+      # ==========================================================
       - name: Checkout oscam-emu-patch
         uses: actions/checkout@v4
         with:
           repository: oscam-mirror/oscam-emu-patch
-          token: ${{ github.token }}
+          token: ${{ secrets.ACTIONS_TOKEN }}
           path: emu
           fetch-depth: 0
 
+      # ==========================================================
+      # Patch erstellen
+      # ==========================================================
       - name: Create patch
         run: |
           set -e
@@ -43,6 +58,9 @@ jobs:
 
           sed -i "1s/^/patch version: $(./config.sh --oscam-version) ($(./config.sh --oscam-commit))\npatch date: $(date '+%Y-%m-%d %H:%M:%S %Z (%:z)')\n---\n/" emu/oscam-emu.patch
 
+      # ==========================================================
+      # Patch committen und pushen
+      # ==========================================================
       - name: Commit oscam-emu.patch
         run: |
           set -e
