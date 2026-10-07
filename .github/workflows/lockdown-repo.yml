@@ -2,25 +2,33 @@ name: 'lockdown repo'
 
 on:
   issues:
-    types: opened
+    types:
+      - opened
+
   pull_request_target:
-    types: opened
+    types:
+      - opened
+
   workflow_dispatch:
 
 permissions:
+  contents: read
   issues: write
   pull-requests: write
 
 jobs:
   lockdown:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: dessant/repo-lockdown@v4
+      - name: Lock down issues and pull requests
+        uses: dessant/repo-lockdown@v4
         with:
           close-issue: true
           issue-comment: >
             This repository does not accept bug reports.
           skip-closed-issue-comment: true
+
           close-pr: true
           pr-comment: >
             This repository does not accept pull requests
