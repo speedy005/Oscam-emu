@@ -46,8 +46,12 @@ jobs:
 
           git merge mirror/master
 
-          git push --follow-tags origin ${force:-}
-  
+          if [ -n "${force:-}" ]; then
+            git push --follow-tags origin --force
+          else
+            git push --follow-tags origin
+          fi
+
   reuse:
     uses: ./.github/workflows/merge-gitlab.yml
     secrets: inherit
