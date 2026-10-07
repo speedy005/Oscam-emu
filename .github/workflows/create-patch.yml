@@ -6,36 +6,56 @@ on:
       - master
     paths-ignore:
       - '.github/**'
+
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   create-patch:
     runs-on: ubuntu-latest
 
     steps:
-    - name: checkout master
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          token: ${{ github.token }}
 
-    - name: checkout oscam-emu-patch
-      uses: actions/checkout@v4
-      with:
-        repository: oscam-mirror/oscam-emu-patch
-        token: ${{ secrets.ACTIONS_TOKEN }}
-        path: emu
+      - name: Checkout oscam-emu-patch
+        uses: actions/checkout@v4
+        with:
+          repository: oscam-mirror/oscam-emu-patch
+          token: ${{ github.token }}
+          path: emu
+          fetch-depth: 0
 
-    - name: create patch
-      run: |
-        git diff origin/oscam-gitlab -- > emu/oscam-emu.patch :^.github :^.gitlab
-        sed -i "1s/^/patch version: $(./config.sh --oscam-version) ($(./config.sh --oscam-commit))\npatch date: $(date "+%Y-%m-%d %H:%M:%S %Z (%:z)")\n---\n/" emu/oscam-emu.patch
+      - name: Create patch
+        run: |
+          set -e
 
-    - name: commit oscam-emu.patch
-      run: |
-        cd emu
-        git config --global user.name "oscam-emu-bot"
-        git config --global user.email "187860193+oscam-emu-bot@users.noreply.github.com"
-        if ! git diff --quiet HEAD; then
-          git commit -am "Sync patch with $(../config.sh --oscam-version)"
-          git push
-        fi
+          git diff origin/oscam-gitlab -- \
+            ':^.github' \
+            ':^.gitlab' \
+            > emu/oscam-emu.patch
+
+          sed -i "1s/^/patch version: $(./config.sh --oscam-version) ($(./config.sh --oscam-commit))\npatch date: $(date '+%Y-%m-%d %H:%M:%S %Z (%:z)')\n---\n/" emu/oscam-emu.patch
+
+      - name: Commit oscam-emu.patch
+        run: |
+          set -e
+
+          cd emu
+
+          git config user.name "oscam-emu-bot"
+          git config user.email "187860193+oscam-emu-bot@users.noreply.github.com"
+
+          if ! git diff --quiet HEAD; then
+            git add oscam-emu.patch
+            git commit -m "Sync patch with $(../config.sh --oscam-version)"
+            git push origin HEAD:master
+          else
+            echo "No changes to commit."
+          fi
