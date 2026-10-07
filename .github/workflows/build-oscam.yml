@@ -15,9 +15,6 @@ on:
 
   workflow_dispatch:
 
-# ------------------------------------------------------------
-# Berechtigungen für GITHUB_TOKEN
-# ------------------------------------------------------------
 permissions:
   contents: read
 
@@ -26,39 +23,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      # --------------------------------------------------------
-      # Repository Checkout
-      # --------------------------------------------------------
       - name: Checkout master
         uses: actions/checkout@v4
         with:
-          token: ${{ github.token }}
           ref: master
           fetch-depth: 1
+          token: ${{ github.token }}
 
-      # --------------------------------------------------------
-      # Build libdvbcsa
-      # --------------------------------------------------------
       - name: Build libdvbcsa
         run: |
           set -e
 
           git clone https://github.com/oe-mirrors/libdvbcsa.git
-
           cd libdvbcsa
 
           ./bootstrap
-
           ./configure --enable-avx2
-
           make -j"$(nproc)"
-
           sudo make install
 
-      # --------------------------------------------------------
-      # Build OSCam-EMU
-      # --------------------------------------------------------
       - name: Build oscam-emu
         run: |
           set -e
