@@ -4,26 +4,40 @@ on:
   workflow_call:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   merge:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        token: ${{ secrets.ACTIONS_TOKEN }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          token: ${{ github.token }}
 
-    - name: git config
-      run: |
-        git config --global user.name "oscam-emu-bot"
-        git config --global user.email "187860193+oscam-emu-bot@users.noreply.github.com"
+      - name: Git config
+        run: |
+          git config user.name "oscam-emu-bot"
+          git config user.email "187860193+oscam-emu-bot@users.noreply.github.com"
 
-    - name: merge oscam-gitlab into master
-      run: |
-        if git merge --no-ff origin/oscam-gitlab -m "Auto-Merge branch 'oscam-gitlab'"; then
-            git push --follow-tags origin
-        else
-            printf "\nfiles with merge conficts:\n"
+      - name: Merge oscam-gitlab into master
+        run: |
+          set -e
+
+          git fetch origin master oscam-gitlab
+
+          if git merge --no-ff origin/oscam-gitlab \
+              -m "Auto-Merge branch 'oscam-gitlab'"; then
+
+            git push --follow-tags origin master
+
+          else
+            echo
+            echo "Files with merge conflicts:"
             git diff --check
-        fi
+            exit 1
+          fi
