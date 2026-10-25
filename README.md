@@ -7,14 +7,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/oscam-mirror/oscam-emu/actions/workflows/build-oscam.yml">
-    <img src="https://github.com/oscam-mirror/oscam-emu/actions/workflows/build-oscam.yml/badge.svg" alt="Build Status">
+  <a href="https://github.com/speedy005/Oscam-emu/actions/workflows/build-oscam.yml">
+    <img src="https://github.com/speedy005/Oscam-emu/actions/workflows/build-oscam.yml/badge.svg" alt="Build Status">
   </a>
-  <a href="https://github.com/oscam-mirror/oscam-emu/actions/workflows/sync-gitlab.yml">
-    <img src="https://github.com/oscam-mirror/oscam-emu/actions/workflows/sync-gitlab.yml/badge.svg" alt="GitLab Sync">
+  <a href="https://github.com/speedy005/Oscam-emu/actions/workflows/sync-gitlab.yml">
+    <img src="https://github.com/speedy005/Oscam-emu/actions/workflows/sync-gitlab.yml/badge.svg" alt="GitLab Sync">
   </a>
-  <a href="https://github.com/oscam-mirror/oscam-emu/actions/workflows/create-patch.yml">
-    <img src="https://github.com/oscam-mirror/oscam-emu/actions/workflows/create-patch.yml/badge.svg" alt="Patch Workflow">
+  <a href="https://github.com/speedy005/Oscam-emu/actions/workflows/create-patch.yml">
+    <img src="https://github.com/speedy005/Oscam-emu/actions/workflows/create-patch.yml/badge.svg" alt="Patch Workflow">
   </a>
   <br>
   <a href="https://github.com/speedy005/Oscam-emu">
@@ -52,7 +52,7 @@ Das Projekt bietet ein flexibles Build-System, Unterstützung für verschiedene 
 
 **Projekt:** [speedy005/Oscam-emu](https://github.com/speedy005/Oscam-emu)
 
-Die ursprüngliche OSCam-Emu-Projekt- und CI-Referenz befindet sich unter [oscam-mirror/oscam-emu](https://github.com/oscam-mirror/oscam-emu).
+Die ursprüngliche OSCam-Emu-Projekt- und CI-Referenz befindet sich unter [oscam-mirror/oscam-emu](https://github.com/speedy005/Oscam-emu).
 
 ## 🔨 OSCam-Emu aus dem Quellcode erstellen
 
@@ -163,7 +163,7 @@ The project provides a flexible build system, support for different CPU architec
 
 **Project:** [speedy005/Oscam-emu](https://github.com/speedy005/Oscam-emu)
 
-The original OSCam-Emu project and CI reference can be found at [oscam-mirror/oscam-emu](https://github.com/oscam-mirror/oscam-emu).
+The original OSCam-Emu project and CI reference can be found at [oscam-mirror/oscam-emu](https://github.com/speedy005/Oscam-emu).
 
 ## 🔨 Building from Source
 
