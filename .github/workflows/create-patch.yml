@@ -39,7 +39,7 @@ jobs:
       - name: Checkout oscam-emu-patch
         uses: actions/checkout@v4
         with:
-          repository: oscam-mirror/oscam-emu-patch
+          repository: Oscam-emu/oscam-emu-patch
           token: ${{ secrets.ACTIONS_TOKEN }}
           path: emu
           fetch-depth: 0
