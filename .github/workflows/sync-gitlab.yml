@@ -33,7 +33,7 @@ jobs:
         run: |
           set -e
 
-          git remote add --track master mirror https://github.com/oscam-mirror/oscam.git
+          git remote add --track master mirror https://github.com/speedy005/Oscam-emu.git
           git fetch mirror
 
           ahead=$(git rev-list mirror/master..HEAD --count)
