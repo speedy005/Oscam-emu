@@ -1,0 +1,43 @@
+name: merge gitlab
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Git config
+        run: |
+          git config user.name "oscam-emu-bot"
+          git config user.email "187860193+oscam-emu-bot@users.noreply.github.com"
+
+      - name: Merge oscam-gitlab into master
+        run: |
+          set -e
+
+          git fetch origin master oscam-gitlab
+
+          if git merge --no-ff origin/oscam-gitlab \
+              -m "Auto-Merge branch 'oscam-gitlab'"; then
+
+            git push --follow-tags origin master
+
+          else
+            echo
+            echo "Files with merge conflicts:"
+            git diff --check
+            exit 1
+          fi

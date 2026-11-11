@@ -28,6 +28,9 @@ ifeq ($(uname_S),Darwin)
 	LINKER_VER_OPT:=-Wl,-v
 endif
 
+ifeq "$(shell ./config.sh --enabled WITH_EMU)" "Y"
+	override USE_LIBCRYPTO=1
+endif
 ifdef USE_SSL
 	override USE_LIBCRYPTO=1
 endif
@@ -370,6 +373,32 @@ SRC-$(CONFIG_CS_CACHEEX) += module-cccam-cacheex.c
 SRC-$(CONFIG_MODULE_CCCAM) += module-cccam.c
 SRC-$(CONFIG_MODULE_CCCSHARE) += module-cccshare.c
 SRC-$(CONFIG_MODULE_CONSTCW) += module-constcw.c
+SRC-$(CONFIG_WITH_EMU) += module-emulator.c
+SRC-$(CONFIG_WITH_EMU) += module-emulator-osemu.c
+SRC-$(CONFIG_WITH_EMU) += module-emulator-biss.c
+SRC-$(CONFIG_WITH_EMU) += module-emulator-cryptoworks.c
+SRC-$(CONFIG_WITH_EMU) += module-emulator-director.c
+SRC-$(CONFIG_WITH_EMU) += module-emulator-irdeto.c
+SRC-$(CONFIG_WITH_EMU) += module-emulator-nagravision.c
+SRC-$(CONFIG_WITH_EMU) += module-emulator-omnicrypt.c
+SRC-$(CONFIG_WITH_EMU) += module-emulator-powervu.c
+SRC-$(CONFIG_WITH_EMU) += module-emulator-viaccess.c
+ifeq "$(CONFIG_WITH_EMU)" "y"
+ifeq "$(CONFIG_WITH_SOFTCAM)" "y"
+UNAME := $(shell uname -s)
+ifneq ($(UNAME),Darwin)
+ifndef ANDROID_NDK
+ifndef ANDROID_STANDALONE_TOOLCHAIN
+TOUCH_SK := $(shell touch SoftCam.Key)
+override LDFLAGS += -Wl,--format=binary -Wl,SoftCam.Key -Wl,--format=default
+ifneq ($(uname_S),Cygwin)
+override LDFLAGS += -Wl,-z,noexecstack
+endif
+endif
+endif
+endif
+endif
+endif
 SRC-$(CONFIG_CS_CACHEEX) += module-csp.c
 SRC-$(CONFIG_CW_CYCLE_CHECK) += module-cw-cycle-check.c
 SRC-$(CONFIG_WITH_AZBOX) += module-dvbapi-azbox.c
@@ -405,16 +434,6 @@ SRC-$(CONFIG_WEBIF) += module-webif-tpl.c
 SRC-$(CONFIG_WEBIF) += module-webif.c
 SRC-$(CONFIG_WEBIF) += webif/pages.c
 SRC-$(CONFIG_WEBIF_WIKI) += webif/pages_wiki.c
-
-ifeq ($(CONFIG_WEBIF),y)
-	# Older libc versions provide clock_gettime in librt.
-	CLOCK_TEST = printf '%s\n' \
-		'int main(void) { struct timespec ts; return clock_gettime(CLOCK_MONOTONIC, &ts); }' | \
-		$(CC) $(CFLAGS) -D_GNU_SOURCE -include time.h -x c -o /dev/null -
-	CLOCK_LIB := $(shell $(CLOCK_TEST) >/dev/null 2>&1 || \
-		{ $(CLOCK_TEST) -lrt >/dev/null 2>&1 && echo -lrt; })
-	override LIBS += $(CLOCK_LIB)
-endif
 SRC-$(CONFIG_WITH_CARDREADER) += reader-common.c
 SRC-$(CONFIG_READER_BULCRYPT) += reader-bulcrypt.c
 SRC-$(CONFIG_READER_CONAX) += reader-conax.c

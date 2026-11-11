@@ -1,0 +1,53 @@
+name: build oscam-emu
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - '.github/**'
+
+  pull_request:
+    branches:
+      - master
+    paths-ignore:
+      - '.github/**'
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 1
+          token: ${{ github.token }}
+
+      - name: Build libdvbcsa
+        run: |
+          set -e
+
+          git clone https://github.com/oe-mirrors/libdvbcsa.git
+          cd libdvbcsa
+
+          ./bootstrap
+          ./configure --enable-avx2
+          make -j"$(nproc)"
+          sudo make install
+
+      - name: Build oscam-emu
+        run: |
+          set -e
+
+          ./config.sh \
+            --enable all \
+            --disable WITH_SOFTCAM
+
+          make -j"$(nproc)"

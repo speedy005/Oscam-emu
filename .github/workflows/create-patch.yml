@@ -1,0 +1,104 @@
+name: create patch
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - '.github/**'
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  create-patch:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ==========================================================
+      # Aktuelles Repository: speedy005/Oscam-emu
+      # ==========================================================
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          repository: speedy005/Oscam-emu
+          ref: master
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      # ==========================================================
+      # Separates Patch-Repository
+      # ==========================================================
+      - name: Checkout oscam-emu-patch
+        uses: actions/checkout@v4
+        with:
+          repository: speedy005/oscam-emu-patch
+          token: ${{ secrets.ACTIONS_TOKEN }}
+          path: emu
+          fetch-depth: 0
+
+      # ==========================================================
+      # OSCam-Basis herunterladen
+      # ==========================================================
+      - name: Checkout OSCam base
+        run: |
+          set -e
+
+          git clone --depth 1 \
+            --branch master \
+            https://github.com/speedy005/oscam-git.git \
+            ../oscam-base
+
+      # ==========================================================
+      # Patch erstellen
+      # ==========================================================
+      - name: Create patch
+        run: |
+          set -e
+
+          echo "Vergleiche OSCam-Emu mit OSCam-Basis..."
+
+          git diff --no-index \
+            --src-prefix=a/ \
+            --dst-prefix=b/ \
+            ../oscam-base/ . \
+            -- ':!.git' ':!.github' ':!.gitlab' \
+            > emu/oscam-emu.patch || RESULT=$?
+
+          if [ "${RESULT:-0}" -gt 1 ]; then
+            echo "Fehler beim Erstellen des Patches."
+            exit 1
+          fi
+
+          if [ ! -s emu/oscam-emu.patch ]; then
+            echo "FEHLER: Patch ist leer!"
+            exit 1
+          fi
+
+          sed -i "1s/^/patch version: $(./config.sh --oscam-version) ($(./config.sh --oscam-commit))\npatch date: $(date '+%Y-%m-%d %H:%M:%S %Z (%:z)')\n---\n/" emu/oscam-emu.patch
+
+          echo "Patch erfolgreich erstellt:"
+          wc -c emu/oscam-emu.patch
+
+      # ==========================================================
+      # Patch committen und pushen
+      # ==========================================================
+      - name: Commit oscam-emu.patch
+        run: |
+          set -e
+
+          cd emu
+
+          git config user.name "oscam-emu-bot"
+          git config user.email "187860193+oscam-emu-bot@users.noreply.github.com"
+
+          git add oscam-emu.patch
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Sync patch with $(../config.sh --oscam-version)"
+            git push origin HEAD:master
+          else
+            echo "No changes to commit."
+          fi

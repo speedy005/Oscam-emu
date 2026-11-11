@@ -201,8 +201,9 @@ static void tpl_add_group_limit_vars(struct templatevars *vars)
 #define MNU_GBX_FSTAINF     27
 #define MNU_GBX_FEXPINF     28
 #define MNU_GBX_INFOLOG     29
+#define MNU_CFG_FSOFTCAMKEY 30
 
-#define MNU_CFG_TOTAL_ITEMS 30 // sum of items above. Use it for "All inactive" in function calls too.
+#define MNU_CFG_TOTAL_ITEMS 31 // sum of items above. Use it for "All inactive" in function calls too.
 
 static void set_status_info_var(struct templatevars *vars, char *varname, int no_data, char *fmt, double value)
 {
@@ -1388,6 +1389,11 @@ static char *send_oscam_config_streamrelay(struct templatevars *vars, struct uri
 
 	tpl_printf(vars, TPLADD, "STREAM_RELAY_BUFFER_TIME", "%d", cfg.stream_relay_buffer_time);
 	tpl_printf(vars, TPLADD, "STREAM_RELAY_RECONNECT_COUNT", "%d", cfg.stream_relay_reconnect_count);
+#ifdef WITH_EMU
+	tpl_printf(vars, TPLADD, "TMP", "STREAMEMMENABLEDSELECTED%d", cfg.emu_stream_emm_enabled);
+	tpl_addVar(vars, TPLADD, tpl_getVar(vars, "TMP"), "selected");
+	tpl_printf(vars, TPLADD, "STREAM_ECM_DELAY", "%d", cfg.emu_stream_ecm_delay);
+#endif
 
 	tpl_printf(vars, TPLADD, "TMP", "STREAMCONFIGCLIENTSELECTED%d", cfg.stream_display_client);
 	tpl_addVar(vars, TPLADD, tpl_getVar(vars, "TMP"), "selected");
@@ -2510,7 +2516,7 @@ static char *send_oscam_reader_config(struct templatevars *vars, struct uriparam
 		chk_reader("services", servicelabels, rdr);
 		chk_reader("lb_whitelist_services", servicelabelslb, rdr);
 
-		if(is_network_reader(rdr))    //physical readers make trouble if re-started
+		if(is_network_reader(rdr) || rdr->typ == R_EMU)    //physical readers make trouble if re-started
 		{
 			if(rdr)
 				{
@@ -3307,6 +3313,8 @@ static char *send_oscam_reader_config(struct templatevars *vars, struct uriparam
 	tpl_printf(vars, TPLADD, "RESHARE",      "%d", cfg.cc_reshare);
 	tpl_printf(vars, TPLADD, "CCCRECONNECT", "%d", rdr->cc_reconnect);
 
+	if(rdr->cc_want_emu)
+		{ tpl_addVar(vars, TPLADD, "CCCWANTEMUCHECKED", "checked"); }
 	if(rdr->cc_keepalive)
 		{ tpl_addVar(vars, TPLADD, "KEEPALIVECHECKED", "checked"); }
 #endif
@@ -3344,6 +3352,23 @@ static char *send_oscam_reader_config(struct templatevars *vars, struct uriparam
 	tpl_addVar(vars, TPLADD, "USERSCRIPT", rdr->userscript);
 #endif
 
+#ifdef WITH_EMU
+	//emu_auproviders
+	value = mk_t_ftab(&rdr->emu_auproviders);
+	tpl_addVar(vars, TPLADD, "EMUAUPROVIDERS", value);
+	free_mk_t(value);
+
+	// Date-coded BISS keys
+	if(!apicall)
+	{
+		tpl_addVar(vars, TPLADD, "EMUDATECODEDENABLED", (rdr->emu_datecodedenabled == 1) ? "checked" : "");
+	}
+	else
+	{
+		tpl_addVar(vars, TPLADD, "EMUDATECODEDENABLED", (rdr->emu_datecodedenabled == 1) ? "1" : "0");
+	}
+#endif
+
 	tpl_addVar(vars, TPLADD, "PROTOCOL", reader_get_type_desc(rdr, 0));
 
 	// Show only parameters which needed for the reader
@@ -3364,6 +3389,9 @@ static char *send_oscam_reader_config(struct templatevars *vars, struct uriparam
 		break;
 	case R_CAMD35 :
 		tpl_addVar(vars, TPLAPPEND, "READERDEPENDINGCONFIG", tpl_getTpl(vars, "READERCONFIGCAMD35BIT"));
+		break;
+	case R_EMU :
+		tpl_addVar(vars, TPLAPPEND, "READERDEPENDINGCONFIG", tpl_getTpl(vars, "READERCONFIGEMUBIT"));
 		break;
 	case R_CS378X :
 		tpl_addVar(vars, TPLAPPEND, "READERDEPENDINGCONFIG", tpl_getTpl(vars, "READERCONFIGCS378XBIT"));
@@ -5404,9 +5432,34 @@ static char *send_oscam_entitlement(struct templatevars *vars, struct uriparams 
 
 					tpl_addVar(vars, TPLAPPEND, "LOGHISTORY", "<BR><BR>New Structure:<BR>");
 					char tbuffer[83];
+#ifdef WITH_EMU
+					char keyBuffer[1024];
+#endif
 					int jsondelimiter = 0;
 					while((item = ll_iter_next(&itr)))
 					{
+#ifdef WITH_EMU
+						if(item->isKey)
+						{
+							tpl_addVar(vars, TPLADD, "ENTSTARTDATE", "");
+							tpl_addVar(vars, TPLADD, "ENTENDDATE", "");
+							cs_hexdump(0, item->key, item->keyLength, keyBuffer, sizeof(keyBuffer));
+							tpl_addVar(vars, TPLADD, "ENTEXPIERED", "e_valid");
+							tpl_printf(vars, TPLADD, "ENTCAID", "%04X", item->caid);
+							tpl_printf(vars, TPLADD, "ENTPROVID", "%08X", item->provid);
+							tpl_addVar(vars, TPLADD, "ENTID", item->name);
+							tpl_addVar(vars, TPLADD, "ENTCLASS", keyBuffer);
+							if(item->isData) { tpl_addVar(vars, TPLADD, "ENTTYPE", "data"); }
+							else { tpl_addVar(vars, TPLADD, "ENTTYPE", "key"); }
+							tpl_addVar(vars, TPLADD, "ENTRESNAME", "");
+
+							if((strcmp(getParam(params, "hideexpired"), "1") != 0) || (item->end > now))
+								{ tpl_addVar(vars, TPLAPPEND, "READERENTENTRY", tpl_getTpl(vars, "ENTITLEMENTITEMBIT")); }
+
+							continue;
+						}
+#endif
+
 						localtime_r(&item->start, &start_t);
 						localtime_r(&item->end, &end_t);
 
@@ -5903,6 +5956,9 @@ static char *send_oscam_status(struct templatevars * vars, struct uriparams * pa
 						filtered = (type == cl->typ) || (type == 'x' && (cl->typ == 'p' || cl->typ == 'r') && (cl->reader && cl->reader->cacheex.mode));
 #else
 						filtered = (type == cl->typ);
+#endif
+#ifdef WITH_EMU
+						if(type == 'e' && cl->typ == 'r' && cl->reader->typ == R_EMU) filtered = 1;
 #endif
 					}
 				}
@@ -7514,6 +7570,9 @@ static char *send_oscam_files(struct templatevars * vars, struct uriparams * par
 		{ "expired.info",    MNU_GBX_FEXPINF,   FTYPE_GBOX },     // id 28
 		{ "info.log",        MNU_GBX_INFOLOG,   FTYPE_GBOX },     // id 29
 #endif
+#ifdef WITH_EMU
+		{ "SoftCam.Key",     MNU_CFG_FSOFTCAMKEY,FTYPE_CONFIG },  // id 30
+#endif
 		{ NULL, 0, 0 },
 	};
 
@@ -7985,7 +8044,11 @@ static char *send_oscam_EMM_running(struct templatevars * vars, struct uriparams
 		else if(!proxy && rdr->csystem_active)     // local active reader
 		{
 			csystem = rdr->csystem;
-			caid = rdr->caid;
+
+			if(rdr->typ != R_EMU)
+			{
+				caid = rdr->caid;
+			}
 		}
 
 		if(csystem)
@@ -9222,7 +9285,6 @@ static int8_t check_request(char *result, int32_t readen)
 	return 0;
 }
 
-/* Keep retries and partial reads within one monotonic deadline. */
 static int32_t webif_remaining_ms(const struct timespec *deadline)
 {
 	struct timespec now;
@@ -9286,7 +9348,11 @@ static int32_t readRequest(FILE * f, IN_ADDR_T in, char **result, int8_t forcePl
 	int32_t fd;
 	int8_t allocation_failed = 0;
 	struct timespec deadline;
+	#ifdef WITH_EMU
+	const int32_t max_request_size = cfg.http_max_request_size > 0 ? cfg.http_max_request_size : 204800;
+	#else
 	const int32_t max_request_size = cfg.http_max_request_size > 0 ? cfg.http_max_request_size : 102400;
+	#endif
 	char buf2[1024];
 #ifdef WITH_SSL
 	int8_t is_ssl = 0;
@@ -9459,47 +9525,47 @@ static int32_t process_request(FILE * f, IN_ADDR_T in)
 		char *method, *path, *protocol, *str1, *saveptr1 = NULL, *authheader = NULL, *extraheader = NULL, *filebuf = NULL;
 		char *pch, *tmp, *buf, *nameInUrl, subdir[32];
 		/* List of possible pages */
-		static const char *const pages[WEBIF_PAGE_COUNT] =
+		char *pages[] =
 		{
-			[WEBIF_PAGE_CONFIG] = "/config.html",
-			[WEBIF_PAGE_READERS] = "/readers.html",
-			[WEBIF_PAGE_ENTITLEMENTS] = "/entitlements.html",
-			[WEBIF_PAGE_STATUS] = "/status.html",
-			[WEBIF_PAGE_USERCONFIG] = "/userconfig.html",
-			[WEBIF_PAGE_READERCONFIG] = "/readerconfig.html",
-			[WEBIF_PAGE_SERVICES] = "/services.html",
-			[WEBIF_PAGE_USER_EDIT] = "/user_edit.html",
-			[WEBIF_PAGE_CSS] = "/site.css",
-			[WEBIF_PAGE_SERVICES_EDIT] = "/services_edit.html",
-			[WEBIF_PAGE_SAVETEMPLATES] = "/savetemplates.html",
-			[WEBIF_PAGE_SHUTDOWN] = "/shutdown.html",
-			[WEBIF_PAGE_SCRIPT] = "/script.html",
-			[WEBIF_PAGE_SCANUSB] = "/scanusb.html",
-			[WEBIF_PAGE_FILES] = "/files.html",
-			[WEBIF_PAGE_READERSTATS] = "/readerstats.html",
-			[WEBIF_PAGE_FAILBAN] = "/failban.html",
-			[WEBIF_PAGE_JS] = "/oscam.js",
-			[WEBIF_PAGE_API_HTML] = "/oscamapi.html",
-			[WEBIF_PAGE_IMAGE] = "/image",
-			[WEBIF_PAGE_FAVICON] = "/favicon.ico",
-			[WEBIF_PAGE_GRAPH] = "/graph.svg",
-			[WEBIF_PAGE_API_XML] = "/oscamapi.xml",
-			[WEBIF_PAGE_CACHEEX] = "/cacheex.html",
-			[WEBIF_PAGE_API_JSON] = "/oscamapi.json",
-			[WEBIF_PAGE_EMM] = "/emm.html",
-			[WEBIF_PAGE_EMM_RUNNING] = "/emm_running.html",
-			[WEBIF_PAGE_ROBOTS] = "/robots.txt",
-			[WEBIF_PAGE_GHTTP] = "/ghttp.html",
-			[WEBIF_PAGE_LOGPOLL] = "/logpoll.html",
-			[WEBIF_PAGE_JQUERY] = "/jquery.js",
+			"/config.html",
+			"/readers.html",
+			"/entitlements.html",
+			"/status.html",
+			"/userconfig.html",
+			"/readerconfig.html",
+			"/services.html",
+			"/user_edit.html",
+			"/site.css",
+			"/services_edit.html",
+			"/savetemplates.html",
+			"/shutdown.html",
+			"/script.html",
+			"/scanusb.html",
+			"/files.html",
+			"/readerstats.html",
+			"/failban.html",
+			"/oscam.js",
+			"/oscamapi.html",
+			"/image",
+			"/favicon.ico",
+			"/graph.svg",
+			"/oscamapi.xml",
+			"/cacheex.html",
+			"/oscamapi.json",
+			"/emm.html",
+			"/emm_running.html",
+			"/robots.txt",
+			"/ghttp.html",
+			"/logpoll.html",
+			"/jquery.js",
 #ifdef WEBIF_WIKI
-			[WEBIF_PAGE_WIKI] = "/wiki.json",
-			[WEBIF_PAGE_WIKI_STATUS] = "/wiki_status.json",
+			"/wiki.json",
+			"/wiki_status.json",
 #endif
 		};
 
-		int32_t i, bufsize, len;
-		enum webif_page pgidx = WEBIF_PAGE_UNKNOWN;
+		int32_t pagescnt = sizeof(pages) / sizeof(char *); // Calculate the amount of items in array
+		int32_t i, bufsize, len, pgidx = -1;
 		uint32_t etagheader = 0;
 		struct uriparams params;
 		params.paramcount = 0;
@@ -9583,9 +9649,9 @@ static int32_t process_request(FILE * f, IN_ADDR_T in)
 		}
 
 		/* Map page to our static page definitions */
-		for(i = 0; i < WEBIF_PAGE_COUNT; i++)
+		for(i = 0; i < pagescnt; i++)
 		{
-			if(!strcmp(nameInUrl, pages[i])) { pgidx = (enum webif_page)i; }
+			if(!strcmp(nameInUrl, pages[i])) { pgidx = i; }
 		}
 
 		parseParams(&params, pch);
@@ -9692,15 +9758,15 @@ static int32_t process_request(FILE * f, IN_ADDR_T in)
 		}
 
 		/*build page*/
-		if(pgidx == WEBIF_PAGE_CSS)
+		if(pgidx == 8)
 		{
 			send_file(f, "CSS", subdir, modifiedheader, etagheader, extraheader);
 		}
-		else if(pgidx == WEBIF_PAGE_JS)
+		else if(pgidx == 17)
 		{
 			send_file(f, "JS", subdir, modifiedheader, etagheader, extraheader);
 		}
-		else if(pgidx == WEBIF_PAGE_JQUERY)
+		else if(pgidx == 30)
 		{
 			send_file(f, "JQ", subdir, modifiedheader, etagheader, extraheader);
 		}
@@ -9759,12 +9825,12 @@ static int32_t process_request(FILE * f, IN_ADDR_T in)
 				tpl_printf(vars, TPLADD, "POLLREFRESHTIME", "%d", cfg.poll_refresh);
 			}
 			if	(	cfg.http_refresh > 0 &&
-				(((	pgidx == WEBIF_PAGE_READERS || pgidx == WEBIF_PAGE_USERCONFIG ) && !cfg.poll_refresh ) ||
-				(	pgidx == WEBIF_PAGE_STATUS && ( cfg.http_status_log || !cfg.poll_refresh )) ||
-					pgidx == WEBIF_PAGE_READERSTATS || pgidx == WEBIF_PAGE_CACHEEX || pgidx == WEBIF_PAGE_UNKNOWN ))
+				(((	pgidx == 1 || pgidx == 4 ) && !cfg.poll_refresh ) ||
+				(	pgidx == 3 && ( cfg.http_status_log || !cfg.poll_refresh )) ||
+					pgidx == 15 || pgidx == 23 || pgidx == -1 )) // wenn polling bei cachex.html eingeführt wird muss die 23 => 2 zeilen höher
 			{
 				tpl_printf(vars, TPLADD, "REFRESHTIME", "%d", cfg.http_refresh);
-				tpl_addVar(vars, TPLADD, "WITHQUERY", pgidx == WEBIF_PAGE_READERSTATS ? "1" : "0");
+				tpl_addVar(vars, TPLADD, "WITHQUERY", pgidx == 15 ? "1" : "0");
 				tpl_addVar(vars, TPLADD, "REFRESH", tpl_getTpl(vars, "REFRESH"));
 			}
 #ifdef WEBIF_JQUERY
@@ -9791,8 +9857,8 @@ static int32_t process_request(FILE * f, IN_ADDR_T in)
 			tpl_addVar(vars, TPLADD, "RUNAS", urlencode(vars, username(first_client)));
 
 			time_t now = time((time_t *)0);
-			// API response metadata
-			if(is_api_page(pgidx))
+			// XMLAPI
+			if(pgidx == 18 || pgidx == 22 || pgidx == 24)
 			{
 				char tbuffer [30];
 				strftime(tbuffer, 30, "%Y-%m-%dT%H:%M:%S%z", &st);
@@ -9829,105 +9895,108 @@ static int32_t process_request(FILE * f, IN_ADDR_T in)
 			char *result = NULL;
 
 			// WebIf allows modifying many things. Thus, all pages except images/css/static are expected to be non-threadsafe!
-			if(pgidx != WEBIF_PAGE_IMAGE && pgidx != WEBIF_PAGE_FAVICON && pgidx != WEBIF_PAGE_GRAPH && pgidx != WEBIF_PAGE_ROBOTS) { cs_writelock(__func__, &http_lock); }
+			if(pgidx != 19 && pgidx != 20 && pgidx != 21 && pgidx != 27) { cs_writelock(__func__, &http_lock); }
 			switch(pgidx)
 			{
-			case WEBIF_PAGE_CONFIG:
+			case 0:
 				tpl_addVar(vars, TPLADD, "CONFIG_CONTENT", send_oscam_config(vars, &params));
 				result = tpl_getTpl(vars, "CONFIGCONTENT");
 				break;
-			case WEBIF_PAGE_READERS:
+			case 1:
 				result = send_oscam_reader(vars, &params, 0);
 				break;
-			case WEBIF_PAGE_ENTITLEMENTS:
+			case 2:
 				result = send_oscam_entitlement(vars, &params, 0);
 				break;
-			case WEBIF_PAGE_STATUS:
+			case 3:
 				result = send_oscam_status(vars, &params, 0);
 				break;
-			case WEBIF_PAGE_USERCONFIG:
+			case 4:
 				result = send_oscam_user_config(vars, &params, 0);
 				break;
-			case WEBIF_PAGE_READERCONFIG:
+			case 5:
 				result = send_oscam_reader_config(vars, &params);
 				break;
-			case WEBIF_PAGE_SERVICES:
+			case 6:
 				result = send_oscam_services(vars, &params);
 				break;
-			case WEBIF_PAGE_USER_EDIT:
+			case 7:
 				result = send_oscam_user_config_edit(vars, &params, 0);
 				break;
-			case WEBIF_PAGE_SERVICES_EDIT:
+				//case  8: css file
+			case 9:
 				result = send_oscam_services_edit(vars, &params);
 				break;
-			case WEBIF_PAGE_SAVETEMPLATES:
+			case 10:
 				result = send_oscam_savetpls(vars);
 				break;
-			case WEBIF_PAGE_SHUTDOWN:
+			case 11:
 				result = send_oscam_shutdown(vars, f, &params, 0, keepalive, extraheader);
 				break;
-			case WEBIF_PAGE_SCRIPT:
+			case 12:
 				result = send_oscam_script(vars, &params);
 				break;
-			case WEBIF_PAGE_SCANUSB:
+			case 13:
 				result = send_oscam_scanusb(vars);
 				break;
-			case WEBIF_PAGE_FILES:
+			case 14:
 				result = send_oscam_files(vars, &params, 0);
 				break;
-			case WEBIF_PAGE_READERSTATS:
+			case 15:
 				result = send_oscam_reader_stats(vars, &params, 0);
 				break;
-			case WEBIF_PAGE_FAILBAN:
+			case 16:
 				result = send_oscam_failban(vars, &params, 0);
 				break;
-			case WEBIF_PAGE_API_HTML:
+				//case  17: js file
+			case 18:
 				result = send_oscam_api(vars, f, &params, keepalive, 1, extraheader);
 				break; //oscamapi.html
-			case WEBIF_PAGE_IMAGE:
+			case 19:
 				result = send_oscam_image(vars, f, &params, NULL, modifiedheader, etagheader, extraheader);
 				break;
-			case WEBIF_PAGE_FAVICON:
+			case 20:
 				result = send_oscam_image(vars, f, &params, "ICMAI", modifiedheader, etagheader, extraheader);
 				break;
-			case WEBIF_PAGE_GRAPH:
+			case 21:
 				result = send_oscam_graph(vars);
 				break;
-			case WEBIF_PAGE_API_XML:
+			case 22:
 				result = send_oscam_api(vars, f, &params, keepalive, 1, extraheader);
 				break; //oscamapi.xml
 #ifdef CS_CACHEEX
-			case WEBIF_PAGE_CACHEEX:
+			case 23:
 				result = send_oscam_cacheex(vars, &params, 0);
 				break;
 #endif
-			case WEBIF_PAGE_API_JSON:
+			case 24:
 				result = send_oscam_api(vars, f, &params, keepalive, 2, extraheader);
 				break; //oscamapi.json
-			case WEBIF_PAGE_EMM:
+			case 25:
 				result = send_oscam_EMM(vars, &params);
 				break; //emm.html
-			case WEBIF_PAGE_EMM_RUNNING:
+			case 26:
 				result = send_oscam_EMM_running(vars, &params);
 				break; //emm_running.html
-			case WEBIF_PAGE_ROBOTS:
+			case 27:
 				result = send_oscam_robots_txt(f);
 				break; //robots.txt
 #ifdef MODULE_GHTTP
-			case WEBIF_PAGE_GHTTP:
+			case 28:
 				result = send_oscam_ghttp(vars, &params, 0);
 				break;
 #endif
 #ifdef WEBIF_LIVELOG
-			case WEBIF_PAGE_LOGPOLL:
+			case 29:
 				result = send_oscam_logpoll(vars, &params);
 				break;
+			//case 30: jquery.js
 #endif
 #ifdef WEBIF_WIKI
-			case WEBIF_PAGE_WIKI:
+			case 31:
 				result = send_oscam_wiki(vars, &params);
 				break;
-			case WEBIF_PAGE_WIKI_STATUS:
+			case 32:
 				result = send_oscam_wiki_status(vars, &params);
 				break;
 #endif
@@ -9935,20 +10004,20 @@ static int32_t process_request(FILE * f, IN_ADDR_T in)
 				result = send_oscam_status(vars, &params, 0);
 				break;
 			}
-			if(pgidx != WEBIF_PAGE_IMAGE && pgidx != WEBIF_PAGE_FAVICON && pgidx != WEBIF_PAGE_GRAPH && pgidx != WEBIF_PAGE_ROBOTS) { cs_writeunlock(__func__, &http_lock); }
+			if(pgidx != 19 && pgidx != 20 && pgidx != 21 && pgidx != 27) { cs_writeunlock(__func__, &http_lock); }
 
 			if(result == NULL || !strcmp(result, "0") || cs_strlen(result) == 0) { send_error500(f); }
 			else if(strcmp(result, "1"))
 			{
 				//it doesn't make sense to check for modified etagheader here as standard template has timestamp in output and so site changes on every request
-				if(pgidx == WEBIF_PAGE_API_HTML)
+				if(pgidx == 18)
 					{ send_headers(f, 200, "OK", extraheader, "text/xml", 0, cs_strlen(result), NULL, 0); }
-				else if(pgidx == WEBIF_PAGE_GRAPH)
+				else if(pgidx == 21)
 					{ send_headers(f, 200, "OK", extraheader, "image/svg+xml", 0, cs_strlen(result), NULL, 0); }
-				else if(pgidx == WEBIF_PAGE_API_JSON)
+				else if(pgidx == 24)
 					{ send_headers(f, 200, "OK", extraheader, "text/javascript", 0, cs_strlen(result), NULL, 0); }
 #ifdef WEBIF_WIKI
-				else if(pgidx == WEBIF_PAGE_WIKI)
+				else if(pgidx == 31)
 					{ send_headers(f, 200, "OK", extraheader, "application/json", 0, cs_strlen(result), NULL, 0); }
 #endif
 				else
@@ -10049,15 +10118,14 @@ static void *serve_process(void *conn)
 		{
 			process_request(f, in);
 			fflush(f);
-			shutdown(s, SHUT_WR);
 			fclose(f);
 		}
 		else
 		{
 			cs_log_dbg(D_TRACE, "WebIf: fdopen(%d) failed. (errno=%d %s)", s, errno, strerror(errno));
-			shutdown(s, SHUT_WR);
-			close(s);
 		}
+		shutdown(s, SHUT_WR);
+		close(s);
 	}
 
 	return NULL;
