@@ -1,4 +1,5 @@
 
+
 name: create patch
 
 on:
@@ -24,25 +25,26 @@ jobs:
           ref: master
           fetch-depth: 0
 
-      # CRLF (Windows) in LF (Linux) umwandeln
       - name: Normalize line endings
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ -f ./config.sh ]; then
-            sed -i 's/\r$//' ./config.sh
-            echo "config.sh: Zeilenumbrüche auf LF normalisiert."
-          else
+          if [ ! -f ./config.sh ]; then
             echo "FEHLER: config.sh wurde nicht gefunden."
             exit 1
           fi
+
+          sed -i 's/\r$//' ./config.sh
+
+          echo "config.sh: LF-Zeilenenden gesetzt."
 
       - name: Checkout patch repository
         uses: actions/checkout@v4
         with:
           repository: speedy005/oscam-emu-patch
           token: ${{ secrets.ACTIONS_TOKEN }}
+          ref: master
           path: emu
           fetch-depth: 0
 
@@ -75,12 +77,15 @@ jobs:
           if [ "$STREAM_OK" -eq 0 ] && [ "$MIRROR_OK" -eq 0 ]; then
             echo "FEHLER: Keine der beiden Quellen ist erreichbar."
             exit 1
+
           elif [ "$STREAM_OK" -eq 1 ] && [ "$MIRROR_OK" -eq 0 ]; then
             BASE="refs/remotes/streamboard/HEAD"
             BASE_URL="$STREAMBOARD"
+
           elif [ "$STREAM_OK" -eq 0 ] && [ "$MIRROR_OK" -eq 1 ]; then
             BASE="refs/remotes/mirror/HEAD"
             BASE_URL="$MIRROR"
+
           else
             STREAM_COMMIT=$(git rev-parse refs/remotes/streamboard/HEAD)
             MIRROR_COMMIT=$(git rev-parse refs/remotes/mirror/HEAD)
@@ -88,12 +93,15 @@ jobs:
             if [ "$STREAM_COMMIT" = "$MIRROR_COMMIT" ]; then
               BASE="refs/remotes/streamboard/HEAD"
               BASE_URL="$STREAMBOARD"
+
             elif git merge-base --is-ancestor "$STREAM_COMMIT" "$MIRROR_COMMIT"; then
               BASE="refs/remotes/mirror/HEAD"
               BASE_URL="$MIRROR"
+
             elif git merge-base --is-ancestor "$MIRROR_COMMIT" "$STREAM_COMMIT"; then
               BASE="refs/remotes/streamboard/HEAD"
               BASE_URL="$STREAMBOARD"
+
             else
               echo "FEHLER: Die beiden Quellen haben unterschiedliche Entwicklungsstände."
               echo "Streamboard: $STREAM_COMMIT"
@@ -103,6 +111,7 @@ jobs:
           fi
 
           BASE_COMMIT=$(git rev-parse "$BASE")
+
           echo "base=$BASE_COMMIT" >> "$GITHUB_OUTPUT"
           echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
 
@@ -146,40 +155,56 @@ jobs:
           } > emu/oscam-emu.patch
 
           echo "Patch erstellt."
-          echo "Basis:  $BASE_COMMIT"
-          echo "Ziel:   $TARGET_COMMIT"
+          echo "Basis: $BASE_COMMIT"
+          echo "Ziel:  $TARGET_COMMIT"
+          echo "Version: $VERSION"
 
       - name: Commit patch
         shell: bash
         run: |
           set -euo pipefail
 
+          # Generierten Patch sichern
+          cp emu/oscam-emu.patch /tmp/oscam-emu.patch.generated
+
           cd emu
 
           git config user.name "oscam-emu-bot"
           git config user.email "187860193+oscam-emu-bot@users.noreply.github.com"
 
-          # Aktuellen Remote-Stand abrufen
-          git fetch origin master
+          # Maximal drei Versuche bei parallelen Änderungen
+          for attempt in 1 2 3; do
 
-          # Prüfen, ob der Patch geändert wurde
-          git add oscam-emu.patch
+            echo "Push-Versuch $attempt von 3"
 
-          if ! git diff --cached --quiet; then
+            # Aktuellen Remote-Stand holen
+            git fetch origin master
+
+            # Lokalen Stand auf Remote setzen
+            git reset --hard origin/master
+
+            # Neu erzeugten Patch wiederherstellen
+            cp /tmp/oscam-emu.patch.generated oscam-emu.patch
+
+            git add oscam-emu.patch
+
+            if git diff --cached --quiet; then
+              echo "Patch unverändert – kein Commit erforderlich."
+              exit 0
+            fi
 
             VERSION=$(bash ../config.sh --oscam-version)
 
-            # Neuen Patch committen
             git commit -m "Sync patch with $VERSION"
 
-            # Aktuellen Remote-Stand integrieren
-            git rebase origin/master
+            if git push origin HEAD:master; then
+              echo "Patch erfolgreich übertragen."
+              exit 0
+            fi
 
-            # Änderungen übertragen
-            git push origin master
+            echo "Push fehlgeschlagen. Neuer Versuch."
 
-            echo "Patch erfolgreich übertragen."
+          done
 
-          else
-            echo "Patch unverändert – kein Commit erforderlich."
-          fi
+          echo "FEHLER: Patch konnte nach 3 Versuchen nicht übertragen werden."
+          exit 1
