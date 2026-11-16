@@ -9342,11 +9342,11 @@ static int32_t readRequest(FILE * f, IN_ADDR_T in, char **result, int8_t forcePl
 	int32_t fd;
 	int8_t allocation_failed = 0;
 	struct timespec deadline;
-#ifdef WITH_EMU
+	#ifdef WITH_EMU
 	const int32_t max_request_size = cfg.http_max_request_size > 0 ? cfg.http_max_request_size : 204800;
-#else
+	#else
 	const int32_t max_request_size = cfg.http_max_request_size > 0 ? cfg.http_max_request_size : 102400;
-#endif
+	#endif
 	char buf2[1024];
 #ifdef WITH_SSL
 	int8_t is_ssl = 0;
