@@ -24,6 +24,20 @@ jobs:
           ref: master
           fetch-depth: 0
 
+      # CRLF (Windows) in LF (Linux) umwandeln
+      - name: Normalize line endings
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -f ./config.sh ]; then
+            sed -i 's/\r$//' ./config.sh
+            echo "config.sh: Zeilenumbrüche auf LF normalisiert."
+          else
+            echo "FEHLER: config.sh wurde nicht gefunden."
+            exit 1
+          fi
+
       - name: Checkout patch repository
         uses: actions/checkout@v4
         with:
