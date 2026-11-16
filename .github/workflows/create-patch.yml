@@ -106,7 +106,7 @@ jobs:
           TARGET_BRANCH="master"
           EMU_URL="https://github.com/speedy005/Oscam-emu.git"
 
-          VERSION=$(./config.sh --oscam-version)
+          VERSION=$(bash ./config.sh --oscam-version)
           PATCH_DATE=$(date '+%Y-%m-%d')
           MODIFIED_DATE=$(date '+%d/%m/%Y')
 
@@ -146,7 +146,8 @@ jobs:
           git add oscam-emu.patch
 
           if ! git diff --cached --quiet; then
-            git commit -m "Sync patch with $(../config.sh --oscam-version)"
+            VERSION=$(bash ../config.sh --oscam-version)
+            git commit -m "Sync patch with $VERSION"
             git push
           else
             echo "Patch unverändert – kein Commit erforderlich."
