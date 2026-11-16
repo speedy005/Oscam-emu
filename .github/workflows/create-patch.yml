@@ -44,6 +44,7 @@ jobs:
           repository: speedy005/oscam-emu-patch
           token: ${{ secrets.ACTIONS_TOKEN }}
           path: emu
+          fetch-depth: 0
 
       - name: Find newest upstream base
         id: upstream
@@ -154,15 +155,31 @@ jobs:
           set -euo pipefail
 
           cd emu
+
           git config user.name "oscam-emu-bot"
           git config user.email "187860193+oscam-emu-bot@users.noreply.github.com"
 
+          # Aktuellen Remote-Stand abrufen
+          git fetch origin master
+
+          # Prüfen, ob der Patch geändert wurde
           git add oscam-emu.patch
 
           if ! git diff --cached --quiet; then
+
             VERSION=$(bash ../config.sh --oscam-version)
+
+            # Neuen Patch committen
             git commit -m "Sync patch with $VERSION"
-            git push
+
+            # Aktuellen Remote-Stand integrieren
+            git rebase origin/master
+
+            # Änderungen übertragen
+            git push origin master
+
+            echo "Patch erfolgreich übertragen."
+
           else
             echo "Patch unverändert – kein Commit erforderlich."
           fi
