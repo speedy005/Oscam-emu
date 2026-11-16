@@ -1,3 +1,4 @@
+
 name: create patch
 
 on:
@@ -8,34 +9,146 @@ on:
       - '.github/**'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   create-patch:
     runs-on: ubuntu-latest
 
     steps:
-    - name: checkout master
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout OSCam-Emu master
+        uses: actions/checkout@v4
+        with:
+          repository: speedy005/Oscam-emu
+          ref: master
+          fetch-depth: 0
 
-    - name: checkout oscam-emu-patch
-      uses: actions/checkout@v4
-      with:
-        repository: oscam-mirror/oscam-emu-patch
-        token: ${{ secrets.ACTIONS_TOKEN }}
-        path: emu
+      - name: Checkout patch repository
+        uses: actions/checkout@v4
+        with:
+          repository: speedy005/oscam-emu-patch
+          token: ${{ secrets.ACTIONS_TOKEN }}
+          path: emu
 
-    - name: create patch
-      run: |
-        git diff origin/oscam-gitlab -- > emu/oscam-emu.patch :^.github :^.gitlab
-        sed -i "1s/^/patch version: $(./config.sh --oscam-version) ($(./config.sh --oscam-commit))\npatch date: $(date "+%Y-%m-%d %H:%M:%S %Z (%:z)")\n---\n/" emu/oscam-emu.patch
+      - name: Find newest upstream base
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
 
-    - name: commit oscam-emu.patch
-      run: |
-        cd emu
-        git config --global user.name "oscam-emu-bot"
-        git config --global user.email "187860193+oscam-emu-bot@users.noreply.github.com"
-        if ! git diff --quiet HEAD; then
-          git commit -am "Sync patch with $(../config.sh --oscam-version)"
-          git push
-        fi
+          STREAMBOARD="https://git.streamboard.tv/common/oscam.git"
+          MIRROR="https://github.com/speedy005/oscam-git.git"
+
+          STREAM_OK=0
+          MIRROR_OK=0
+
+          if git fetch --no-tags "$STREAMBOARD" HEAD:refs/remotes/streamboard/HEAD; then
+            STREAM_OK=1
+            echo "Streamboard erreichbar."
+          else
+            echo "Streamboard nicht erreichbar."
+          fi
+
+          if git fetch --no-tags "$MIRROR" HEAD:refs/remotes/mirror/HEAD; then
+            MIRROR_OK=1
+            echo "GitHub-Mirror erreichbar."
+          else
+            echo "GitHub-Mirror nicht erreichbar."
+          fi
+
+          if [ "$STREAM_OK" -eq 0 ] && [ "$MIRROR_OK" -eq 0 ]; then
+            echo "FEHLER: Keine der beiden Quellen ist erreichbar."
+            exit 1
+          elif [ "$STREAM_OK" -eq 1 ] && [ "$MIRROR_OK" -eq 0 ]; then
+            BASE="refs/remotes/streamboard/HEAD"
+            BASE_URL="$STREAMBOARD"
+          elif [ "$STREAM_OK" -eq 0 ] && [ "$MIRROR_OK" -eq 1 ]; then
+            BASE="refs/remotes/mirror/HEAD"
+            BASE_URL="$MIRROR"
+          else
+            STREAM_COMMIT=$(git rev-parse refs/remotes/streamboard/HEAD)
+            MIRROR_COMMIT=$(git rev-parse refs/remotes/mirror/HEAD)
+
+            if [ "$STREAM_COMMIT" = "$MIRROR_COMMIT" ]; then
+              BASE="refs/remotes/streamboard/HEAD"
+              BASE_URL="$STREAMBOARD"
+            elif git merge-base --is-ancestor "$STREAM_COMMIT" "$MIRROR_COMMIT"; then
+              BASE="refs/remotes/mirror/HEAD"
+              BASE_URL="$MIRROR"
+            elif git merge-base --is-ancestor "$MIRROR_COMMIT" "$STREAM_COMMIT"; then
+              BASE="refs/remotes/streamboard/HEAD"
+              BASE_URL="$STREAMBOARD"
+            else
+              echo "FEHLER: Die beiden Quellen haben unterschiedliche Entwicklungsstände."
+              echo "Streamboard: $STREAM_COMMIT"
+              echo "GitHub:      $MIRROR_COMMIT"
+              exit 1
+            fi
+          fi
+
+          BASE_COMMIT=$(git rev-parse "$BASE")
+          echo "base=$BASE_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
+
+          echo "Verwendete Basis: $BASE_COMMIT"
+          echo "Verwendete Quelle: $BASE_URL"
+
+      - name: Create patch
+        shell: bash
+        env:
+          BASE_COMMIT: ${{ steps.upstream.outputs.base }}
+          BASE_URL: ${{ steps.upstream.outputs.base_url }}
+        run: |
+          set -euo pipefail
+
+          TARGET_COMMIT=$(git rev-parse HEAD)
+          TARGET_BRANCH="master"
+          EMU_URL="https://github.com/speedy005/Oscam-emu.git"
+
+          VERSION=$(bash ./config.sh --oscam-version)
+          PATCH_DATE=$(date '+%Y-%m-%d')
+          MODIFIED_DATE=$(date '+%d/%m/%Y')
+
+          git diff --binary "$BASE_COMMIT" "$TARGET_COMMIT" -- \
+            . \
+            ':(exclude).github/**' \
+            ':(exclude).gitlab/**' \
+            > /tmp/oscam-emu.patch
+
+          {
+            printf 'patch version: %s (%s)\n' \
+              "$VERSION" "${BASE_COMMIT:0:8}"
+            printf 'patch date: %s\n' "$PATCH_DATE"
+            printf 'patch modified by speedy005 (%s)\n' "$MODIFIED_DATE"
+            printf 'patch base commit: %s\n' "$BASE_COMMIT"
+            printf 'patch target commit: %s\n' "$TARGET_COMMIT"
+            printf 'patch streamboard url: %s\n' "$BASE_URL"
+            printf 'patch emu repository url: %s\n' "$EMU_URL"
+            printf 'patch emu branch: %s\n' "$TARGET_BRANCH"
+            printf '%s\n' '---'
+            cat /tmp/oscam-emu.patch
+          } > emu/oscam-emu.patch
+
+          echo "Patch erstellt."
+          echo "Basis:  $BASE_COMMIT"
+          echo "Ziel:   $TARGET_COMMIT"
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd emu
+          git config user.name "oscam-emu-bot"
+          git config user.email "187860193+oscam-emu-bot@users.noreply.github.com"
+
+          git add oscam-emu.patch
+
+          if ! git diff --cached --quiet; then
+            VERSION=$(bash ../config.sh --oscam-version)
+            git commit -m "Sync patch with $VERSION"
+            git push
+          else
+            echo "Patch unverändert – kein Commit erforderlich."
+          fi
