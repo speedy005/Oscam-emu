@@ -1,3 +1,4 @@
+
 name: create patch
 
 on:
@@ -59,7 +60,7 @@ jobs:
           fetch-depth: 0
 
       # ============================================================
-      # Neueste Upstream-Basis ermitteln
+      # Neueste echte Upstream-Quellcode-Basis ermitteln
       # ============================================================
 
       - name: Find newest upstream base
@@ -124,7 +125,35 @@ jobs:
             fi
           fi
 
-          BASE_COMMIT=$(git rev-parse "$BASE")
+          BASE_CANDIDATE=$(git rev-parse "$BASE")
+
+          echo "Ermittelter Remote-HEAD: $BASE_CANDIDATE"
+          echo "Prüfe Commit-Historie auf echten OSCam-Quellcode..."
+
+          SOURCE_COMMIT=""
+          SKIPPED_COMMITS=0
+
+          while IFS= read -r CANDIDATE; do
+            if git cat-file -e "$CANDIDATE:module-webif.c" 2>/dev/null \
+              && git cat-file -e "$CANDIDATE:globals.h" 2>/dev/null; then
+              SOURCE_COMMIT="$CANDIDATE"
+              break
+            fi
+
+            SKIPPED_COMMITS=$((SKIPPED_COMMITS + 1))
+            echo "Überspringe künstlichen Patch-Commit: $CANDIDATE"
+
+          done < <(git rev-list --first-parent "$BASE_CANDIDATE")
+
+          if [ -z "$SOURCE_COMMIT" ]; then
+            echo "FEHLER: Kein echter OSCam-Quellcode-Commit gefunden."
+            exit 1
+          fi
+
+          BASE_COMMIT="$SOURCE_COMMIT"
+
+          echo "Übersprungene künstliche Commits: $SKIPPED_COMMITS"
+          echo "Verwendete echte Quellcode-Basis: $BASE_COMMIT"
 
           echo "base=$BASE_COMMIT" >> "$GITHUB_OUTPUT"
           echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
@@ -152,6 +181,13 @@ jobs:
           PATCH_DATE=$(date '+%Y-%m-%d')
           MODIFIED_DATE=$(date '+%d/%m/%Y')
 
+          echo "Erstelle Patch..."
+          echo "Basis: $BASE_COMMIT"
+          echo "Ziel:  $TARGET_COMMIT"
+
+          git cat-file -e "$BASE_COMMIT^{commit}"
+          git cat-file -e "$TARGET_COMMIT^{commit}"
+
           git diff --binary "$BASE_COMMIT" "$TARGET_COMMIT" -- \
             . \
             ':(exclude).github/**' \
@@ -176,6 +212,15 @@ jobs:
           echo "Basis: $BASE_COMMIT"
           echo "Ziel:  $TARGET_COMMIT"
           echo "Version: $VERSION"
+
+          echo "Patchgröße:"
+          wc -c emu/oscam-emu.patch
+
+          echo "Änderungsübersicht:"
+          git diff --stat "$BASE_COMMIT" "$TARGET_COMMIT" -- \
+            . \
+            ':(exclude).github/**' \
+            ':(exclude).gitlab/**'
 
       # ============================================================
       # Patch-Zeilenenden normalisieren und kontrollieren
@@ -211,6 +256,7 @@ jobs:
           print("CRLF:", crlf)
           print("LF:", lf)
           print("Einzelne CR:", cr)
+          print("Dateigröße:", len(data), "Bytes")
 
           if crlf != 0 or cr != 0:
               raise SystemExit(
