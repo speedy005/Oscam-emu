@@ -59,6 +59,36 @@ jobs:
           ref: master
           path: emu
           fetch-depth: 0
+          persist-credentials: true
+
+      # ============================================================
+      # Push-Ziel vorab kontrollieren
+      # ============================================================
+
+      - name: Verify patch repository
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EXPECTED_REMOTE="https://github.com/speedy005/oscam-emu-patch.git"
+          ACTUAL_REMOTE=$(git -C emu remote get-url origin)
+
+          echo "=========================================="
+          echo "REPOSITORY-SICHERHEITSPRÜFUNG"
+          echo "=========================================="
+
+          echo "Erwartetes Repository:"
+          echo "$EXPECTED_REMOTE"
+
+          echo "Tatsächliches Repository:"
+          echo "$ACTUAL_REMOTE"
+
+          if [ "$ACTUAL_REMOTE" != "$EXPECTED_REMOTE" ]; then
+            echo "FEHLER: Falsches Patch-Repository!"
+            exit 1
+          fi
+
+          echo "OK: Push-Ziel ist oscam-emu-patch."
 
       # ============================================================
       # Neueste echte Upstream-Quellcode-Basis ermitteln
@@ -95,8 +125,6 @@ jobs:
           else
             echo "GitHub-Mirror nicht erreichbar oder Zeitüberschreitung."
           fi
-
-          # Verfügbare Quelle auswählen
 
           if [ "$STREAM_OK" -eq 0 ] && [ "$MIRROR_OK" -eq 0 ]; then
             echo "FEHLER: Keine der beiden Quellen ist erreichbar."
@@ -276,7 +304,6 @@ jobs:
 
           data = patch_file.read_bytes()
 
-          # CRLF und einzelne CR-Zeichen in LF umwandeln.
           data = data.replace(b"\r\n", b"\n")
           data = data.replace(b"\r", b"\n")
 
@@ -313,6 +340,25 @@ jobs:
 
           cd emu
 
+          # ABSOLUTE SICHERHEITSPRÜFUNG VOR JEDEM PUSH
+
+          EXPECTED_REMOTE="https://github.com/speedy005/oscam-emu-patch.git"
+          ACTUAL_REMOTE=$(git remote get-url origin)
+
+          echo "=========================================="
+          echo "LETZTE PUSH-ZIEL-KONTROLLE"
+          echo "=========================================="
+
+          echo "Erwartet:  $EXPECTED_REMOTE"
+          echo "Tatsächlich: $ACTUAL_REMOTE"
+
+          if [ "$ACTUAL_REMOTE" != "$EXPECTED_REMOTE" ]; then
+            echo "FEHLER: Push wird aus Sicherheitsgründen abgebrochen!"
+            exit 1
+          fi
+
+          echo "OK: Ausschließlich oscam-emu-patch ist als Ziel erlaubt."
+
           git config user.name "oscam-emu-bot"
           git config user.email "187860193+oscam-emu-bot@users.noreply.github.com"
 
@@ -323,6 +369,15 @@ jobs:
             git fetch origin master
 
             git reset --hard origin/master
+
+            # Sicherstellen, dass das Remote weiterhin korrekt ist.
+
+            ACTUAL_REMOTE=$(git remote get-url origin)
+
+            if [ "$ACTUAL_REMOTE" != "$EXPECTED_REMOTE" ]; then
+              echo "FEHLER: Push-Ziel wurde verändert. Abbruch."
+              exit 1
+            fi
 
             cp /tmp/oscam-emu.patch.generated oscam-emu.patch
 
