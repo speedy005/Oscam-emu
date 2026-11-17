@@ -84,7 +84,6 @@ jobs:
             STREAM_OK=1
             echo "Streamboard erreichbar."
           else
-            STREAM_OK=0
             echo "Streamboard nicht erreichbar oder Zeitüberschreitung."
           fi
 
@@ -94,13 +93,10 @@ jobs:
             MIRROR_OK=1
             echo "GitHub-Mirror erreichbar."
           else
-            MIRROR_OK=0
             echo "GitHub-Mirror nicht erreichbar oder Zeitüberschreitung."
           fi
 
-          # --------------------------------------------------------
           # Verfügbare Quelle auswählen
-          # --------------------------------------------------------
 
           if [ "$STREAM_OK" -eq 0 ] && [ "$MIRROR_OK" -eq 0 ]; then
             echo "FEHLER: Keine der beiden Quellen ist erreichbar."
@@ -138,9 +134,7 @@ jobs:
             fi
           fi
 
-          # --------------------------------------------------------
           # Künstliche Patch-Commits überspringen
-          # --------------------------------------------------------
 
           BASE_CANDIDATE=$(git rev-parse "$BASE")
 
@@ -201,14 +195,35 @@ jobs:
           PATCH_DATE=$(date '+%Y-%m-%d')
           MODIFIED_DATE=$(date '+%d/%m/%Y')
 
+          echo "=========================================="
+          echo "PATCH-DIAGNOSE"
+          echo "=========================================="
+
+          echo "Basis:"
+          git log -1 --format='%H %s' "$BASE_COMMIT"
+
+          echo "Ziel:"
+          git log -1 --format='%H %s' "$TARGET_COMMIT"
+
+          echo "=========================================="
+          echo "Änderungen ohne CR-Zeilenendunterschiede"
+          echo "=========================================="
+
+          git diff --ignore-cr-at-eol --stat \
+            "$BASE_COMMIT" "$TARGET_COMMIT" -- \
+            . \
+            ':(exclude).github/**' \
+            ':(exclude).gitlab/**'
+
+          echo "=========================================="
           echo "Erstelle Patch..."
-          echo "Basis: $BASE_COMMIT"
-          echo "Ziel:  $TARGET_COMMIT"
+          echo "=========================================="
 
           git cat-file -e "$BASE_COMMIT^{commit}"
           git cat-file -e "$TARGET_COMMIT^{commit}"
 
-          git diff --binary "$BASE_COMMIT" "$TARGET_COMMIT" -- \
+          git diff --ignore-cr-at-eol --binary \
+            "$BASE_COMMIT" "$TARGET_COMMIT" -- \
             . \
             ':(exclude).github/**' \
             ':(exclude).gitlab/**' \
@@ -228,7 +243,10 @@ jobs:
             cat /tmp/oscam-emu.patch
           } > emu/oscam-emu.patch
 
-          echo "Patch erstellt."
+          echo "=========================================="
+          echo "PATCH ERSTELLT"
+          echo "=========================================="
+
           echo "Basis: $BASE_COMMIT"
           echo "Ziel:  $TARGET_COMMIT"
           echo "Version: $VERSION"
@@ -236,11 +254,8 @@ jobs:
           echo "Patchgröße:"
           wc -c emu/oscam-emu.patch
 
-          echo "Änderungsübersicht:"
-          git diff --stat "$BASE_COMMIT" "$TARGET_COMMIT" -- \
-            . \
-            ':(exclude).github/**' \
-            ':(exclude).gitlab/**'
+          echo "Patchgröße in MB:"
+          du -h emu/oscam-emu.patch
 
       # ============================================================
       # Patch-Zeilenenden normalisieren und kontrollieren
@@ -267,7 +282,6 @@ jobs:
 
           patch_file.write_bytes(data)
 
-          # Zeilenenden überprüfen.
           crlf = data.count(b"\r\n")
           lf = data.count(b"\n") - crlf
           cr = data.count(b"\r") - crlf
@@ -315,7 +329,7 @@ jobs:
             git add oscam-emu.patch
 
             if git diff --cached --quiet; then
-              echo "Patch unverändert – kein Commit erforderlich." 
+              echo "Patch unverändert – kein Commit erforderlich."
               exit 0
             fi
 
