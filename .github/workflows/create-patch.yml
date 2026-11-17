@@ -1,5 +1,3 @@
-
-
 name: create patch
 
 on:
@@ -18,6 +16,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ============================================================
+      # OSCam-Emu Repository auschecken
+      # ============================================================
+
       - name: Checkout OSCam-Emu master
         uses: actions/checkout@v4
         with:
@@ -25,7 +27,11 @@ jobs:
           ref: master
           fetch-depth: 0
 
-      - name: Normalize line endings
+      # ============================================================
+      # Zeilenenden der Konfigurationsdatei normalisieren
+      # ============================================================
+
+      - name: Normalize config.sh line endings
         shell: bash
         run: |
           set -euo pipefail
@@ -39,6 +45,10 @@ jobs:
 
           echo "config.sh: LF-Zeilenenden gesetzt."
 
+      # ============================================================
+      # Patch-Repository auschecken
+      # ============================================================
+
       - name: Checkout patch repository
         uses: actions/checkout@v4
         with:
@@ -47,6 +57,10 @@ jobs:
           ref: master
           path: emu
           fetch-depth: 0
+
+      # ============================================================
+      # Neueste Upstream-Basis ermitteln
+      # ============================================================
 
       - name: Find newest upstream base
         id: upstream
@@ -118,6 +132,10 @@ jobs:
           echo "Verwendete Basis: $BASE_COMMIT"
           echo "Verwendete Quelle: $BASE_URL"
 
+      # ============================================================
+      # Patch erstellen
+      # ============================================================
+
       - name: Create patch
         shell: bash
         env:
@@ -159,12 +177,59 @@ jobs:
           echo "Ziel:  $TARGET_COMMIT"
           echo "Version: $VERSION"
 
+      # ============================================================
+      # Patch-Zeilenenden normalisieren und kontrollieren
+      # ============================================================
+
+      - name: Normalize patch line endings
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          patch_file = Path("emu/oscam-emu.patch")
+
+          if not patch_file.is_file():
+              raise SystemExit("FEHLER: oscam-emu.patch wurde nicht gefunden.")
+
+          data = patch_file.read_bytes()
+
+          # CRLF und einzelne CR-Zeichen in LF umwandeln.
+          data = data.replace(b"\r\n", b"\n")
+          data = data.replace(b"\r", b"\n")
+
+          patch_file.write_bytes(data)
+
+          # Zeilenenden überprüfen.
+          crlf = data.count(b"\r\n")
+          lf = data.count(b"\n") - crlf
+          cr = data.count(b"\r") - crlf
+
+          print("Patch-Zeilenenden:")
+          print("CRLF:", crlf)
+          print("LF:", lf)
+          print("Einzelne CR:", cr)
+
+          if crlf != 0 or cr != 0:
+              raise SystemExit(
+                  "FEHLER: Patch enthält noch CR-Zeichen."
+              )
+
+          print("ERFOLG: Patch enthält ausschließlich LF.")
+          PY
+
+      # ============================================================
+      # Patch committen und übertragen
+      # ============================================================
+
       - name: Commit patch
         shell: bash
         run: |
           set -euo pipefail
 
-          # Generierten Patch sichern
+          # Generierten und normalisierten Patch sichern.
           cp emu/oscam-emu.patch /tmp/oscam-emu.patch.generated
 
           cd emu
@@ -172,18 +237,18 @@ jobs:
           git config user.name "oscam-emu-bot"
           git config user.email "187860193+oscam-emu-bot@users.noreply.github.com"
 
-          # Maximal drei Versuche bei parallelen Änderungen
+          # Maximal drei Versuche bei parallelen Änderungen.
           for attempt in 1 2 3; do
 
             echo "Push-Versuch $attempt von 3"
 
-            # Aktuellen Remote-Stand holen
+            # Aktuellen Remote-Stand holen.
             git fetch origin master
 
-            # Lokalen Stand auf Remote setzen
+            # Lokalen Stand auf Remote setzen.
             git reset --hard origin/master
 
-            # Neu erzeugten Patch wiederherstellen
+            # Neu erzeugten Patch wiederherstellen.
             cp /tmp/oscam-emu.patch.generated oscam-emu.patch
 
             git add oscam-emu.patch
