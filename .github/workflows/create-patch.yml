@@ -15,6 +15,7 @@ permissions:
 jobs:
   create-patch:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       # ============================================================
@@ -69,25 +70,37 @@ jobs:
         run: |
           set -euo pipefail
 
+          export GIT_TERMINAL_PROMPT=0
+
           STREAMBOARD="https://git.streamboard.tv/common/oscam.git"
           MIRROR="https://github.com/speedy005/oscam-git.git"
 
           STREAM_OK=0
           MIRROR_OK=0
 
-          if git fetch --no-tags "$STREAMBOARD" HEAD:refs/remotes/streamboard/HEAD; then
+          echo "Prüfe Streamboard..."
+
+          if timeout 20s git fetch --no-tags "$STREAMBOARD" HEAD:refs/remotes/streamboard/HEAD; then
             STREAM_OK=1
             echo "Streamboard erreichbar."
           else
-            echo "Streamboard nicht erreichbar."
+            STREAM_OK=0
+            echo "Streamboard nicht erreichbar oder Zeitüberschreitung."
           fi
 
-          if git fetch --no-tags "$MIRROR" HEAD:refs/remotes/mirror/HEAD; then
+          echo "Prüfe GitHub-Mirror..."
+
+          if timeout 60s git fetch --no-tags "$MIRROR" HEAD:refs/remotes/mirror/HEAD; then
             MIRROR_OK=1
             echo "GitHub-Mirror erreichbar."
           else
-            echo "GitHub-Mirror nicht erreichbar."
+            MIRROR_OK=0
+            echo "GitHub-Mirror nicht erreichbar oder Zeitüberschreitung."
           fi
+
+          # --------------------------------------------------------
+          # Verfügbare Quelle auswählen
+          # --------------------------------------------------------
 
           if [ "$STREAM_OK" -eq 0 ] && [ "$MIRROR_OK" -eq 0 ]; then
             echo "FEHLER: Keine der beiden Quellen ist erreichbar."
@@ -125,6 +138,10 @@ jobs:
             fi
           fi
 
+          # --------------------------------------------------------
+          # Künstliche Patch-Commits überspringen
+          # --------------------------------------------------------
+
           BASE_CANDIDATE=$(git rev-parse "$BASE")
 
           echo "Ermittelter Remote-HEAD: $BASE_CANDIDATE"
@@ -134,13 +151,16 @@ jobs:
           SKIPPED_COMMITS=0
 
           while IFS= read -r CANDIDATE; do
+
             if git cat-file -e "$CANDIDATE:module-webif.c" 2>/dev/null \
               && git cat-file -e "$CANDIDATE:globals.h" 2>/dev/null; then
+
               SOURCE_COMMIT="$CANDIDATE"
               break
             fi
 
             SKIPPED_COMMITS=$((SKIPPED_COMMITS + 1))
+
             echo "Überspringe künstlichen Patch-Commit: $CANDIDATE"
 
           done < <(git rev-list --first-parent "$BASE_CANDIDATE")
@@ -275,7 +295,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Generierten und normalisierten Patch sichern.
           cp emu/oscam-emu.patch /tmp/oscam-emu.patch.generated
 
           cd emu
@@ -283,18 +302,14 @@ jobs:
           git config user.name "oscam-emu-bot"
           git config user.email "187860193+oscam-emu-bot@users.noreply.github.com"
 
-          # Maximal drei Versuche bei parallelen Änderungen.
           for attempt in 1 2 3; do
 
             echo "Push-Versuch $attempt von 3"
 
-            # Aktuellen Remote-Stand holen.
             git fetch origin master
 
-            # Lokalen Stand auf Remote setzen.
             git reset --hard origin/master
 
-            # Neu erzeugten Patch wiederherstellen.
             cp /tmp/oscam-emu.patch.generated oscam-emu.patch
 
             git add oscam-emu.patch
