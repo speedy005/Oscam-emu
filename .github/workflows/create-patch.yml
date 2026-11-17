@@ -315,7 +315,7 @@ jobs:
             git add oscam-emu.patch
 
             if git diff --cached --quiet; then
-              echo "Patch unverändert – kein Commit erforderlich."
+              echo "Patch unverändert – kein Commit erforderlich." 
               exit 0
             fi
 
