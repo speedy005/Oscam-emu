@@ -1,9 +1,0 @@
-# Shell-Skripte immer mit Unix-Zeilenumbrüchen
-*.sh text eol=lf
-
-# YAML und GitHub Actions
-*.yml text eol=lf
-*.yaml text eol=lf
-
-# Git-Konfiguration
-.gitattributes text eol=lf
