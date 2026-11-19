@@ -12,12 +12,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: create-oscam-patch
+  cancel-in-progress: false
+
 jobs:
   create-patch:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
+
       # ============================================================
       # OSCam-Emu Repository auschecken
       # ============================================================
@@ -28,9 +33,10 @@ jobs:
           repository: speedy005/Oscam-emu
           ref: master
           fetch-depth: 0
+          path: source
 
       # ============================================================
-      # Zeilenenden der Konfigurationsdatei normalisieren
+      # Konfiguration normalisieren
       # ============================================================
 
       - name: Normalize config.sh line endings
@@ -38,12 +44,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ ! -f ./config.sh ]; then
+          if [ ! -f source/config.sh ]; then
             echo "FEHLER: config.sh wurde nicht gefunden."
             exit 1
           fi
 
-          sed -i 's/\r$//' ./config.sh
+          sed -i 's/\r$//' source/config.sh
 
           echo "config.sh: LF-Zeilenenden gesetzt."
 
@@ -62,7 +68,7 @@ jobs:
           persist-credentials: true
 
       # ============================================================
-      # Push-Ziel vorab kontrollieren
+      # Gemeinsame Repository-Sicherheitsprüfung
       # ============================================================
 
       - name: Verify patch repository
@@ -70,25 +76,31 @@ jobs:
         run: |
           set -euo pipefail
 
-          EXPECTED_REMOTE="https://github.com/speedy005/oscam-emu-patch.git"
+          EXPECTED_REMOTE="https://github.com/speedy005/oscam-emu-patch"
           ACTUAL_REMOTE=$(git -C emu remote get-url origin)
+
+          normalize_url() {
+            local url="${1%/}"
+            url="${url%.git}"
+            printf '%s' "${url,,}"
+          }
+
+          EXPECTED_NORMALIZED=$(normalize_url "$EXPECTED_REMOTE")
+          ACTUAL_NORMALIZED=$(normalize_url "$ACTUAL_REMOTE")
 
           echo "=========================================="
           echo "REPOSITORY-SICHERHEITSPRÜFUNG"
           echo "=========================================="
 
-          echo "Erwartetes Repository:"
-          echo "$EXPECTED_REMOTE"
+          echo "Erwartet:    $EXPECTED_REMOTE"
+          echo "Tatsächlich: $ACTUAL_REMOTE"
 
-          echo "Tatsächliches Repository:"
-          echo "$ACTUAL_REMOTE"
-
-          if [ "$ACTUAL_REMOTE" != "$EXPECTED_REMOTE" ]; then
+          if [ "$ACTUAL_NORMALIZED" != "$EXPECTED_NORMALIZED" ]; then
             echo "FEHLER: Falsches Patch-Repository!"
             exit 1
           fi
 
-          echo "OK: Push-Ziel ist oscam-emu-patch."
+          echo "OK: Ausschließlich oscam-emu-patch erlaubt."
 
       # ============================================================
       # Neueste echte Upstream-Quellcode-Basis ermitteln
@@ -97,6 +109,7 @@ jobs:
       - name: Find newest upstream base
         id: upstream
         shell: bash
+        working-directory: source
         run: |
           set -euo pipefail
 
@@ -155,33 +168,28 @@ jobs:
               BASE_URL="$STREAMBOARD"
 
             else
-              echo "FEHLER: Die beiden Quellen haben unterschiedliche Entwicklungsstände."
+              echo "FEHLER: Unterschiedliche Entwicklungsstände."
               echo "Streamboard: $STREAM_COMMIT"
               echo "GitHub:      $MIRROR_COMMIT"
               exit 1
             fi
           fi
 
-          # Künstliche Patch-Commits überspringen
-
           BASE_CANDIDATE=$(git rev-parse "$BASE")
 
           echo "Ermittelter Remote-HEAD: $BASE_CANDIDATE"
-          echo "Prüfe Commit-Historie auf echten OSCam-Quellcode..."
+          echo "Prüfe Commit-Historie..."
 
           SOURCE_COMMIT=""
-          SKIPPED_COMMITS=0
 
           while IFS= read -r CANDIDATE; do
 
-            if git cat-file -e "$CANDIDATE:module-webif.c" 2>/dev/null \
-              && git cat-file -e "$CANDIDATE:globals.h" 2>/dev/null; then
+            if git cat-file -e "$CANDIDATE:module-webif.c" 2>/dev/null &&
+               git cat-file -e "$CANDIDATE:globals.h" 2>/dev/null; then
 
               SOURCE_COMMIT="$CANDIDATE"
               break
             fi
-
-            SKIPPED_COMMITS=$((SKIPPED_COMMITS + 1))
 
             echo "Überspringe künstlichen Patch-Commit: $CANDIDATE"
 
@@ -194,14 +202,10 @@ jobs:
 
           BASE_COMMIT="$SOURCE_COMMIT"
 
-          echo "Übersprungene künstliche Commits: $SKIPPED_COMMITS"
           echo "Verwendete echte Quellcode-Basis: $BASE_COMMIT"
 
           echo "base=$BASE_COMMIT" >> "$GITHUB_OUTPUT"
           echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
-
-          echo "Verwendete Basis: $BASE_COMMIT"
-          echo "Verwendete Quelle: $BASE_URL"
 
       # ============================================================
       # Patch erstellen
@@ -209,6 +213,7 @@ jobs:
 
       - name: Create patch
         shell: bash
+        working-directory: source
         env:
           BASE_COMMIT: ${{ steps.upstream.outputs.base }}
           BASE_URL: ${{ steps.upstream.outputs.base_url }}
@@ -217,9 +222,11 @@ jobs:
 
           TARGET_COMMIT=$(git rev-parse HEAD)
           TARGET_BRANCH="master"
+
           EMU_URL="https://github.com/speedy005/Oscam-emu.git"
 
           VERSION=$(bash ./config.sh --oscam-version)
+
           PATCH_DATE=$(date '+%Y-%m-%d')
           MODIFIED_DATE=$(date '+%d/%m/%Y')
 
@@ -243,10 +250,6 @@ jobs:
             ':(exclude).github/**' \
             ':(exclude).gitlab/**'
 
-          echo "=========================================="
-          echo "Erstelle Patch..."
-          echo "=========================================="
-
           git cat-file -e "$BASE_COMMIT^{commit}"
           git cat-file -e "$TARGET_COMMIT^{commit}"
 
@@ -260,6 +263,7 @@ jobs:
           {
             printf 'patch version: %s (%s)\n' \
               "$VERSION" "${BASE_COMMIT:0:8}"
+
             printf 'patch date: %s\n' "$PATCH_DATE"
             printf 'patch modified by speedy005 (%s)\n' "$MODIFIED_DATE"
             printf 'patch base commit: %s\n' "$BASE_COMMIT"
@@ -268,25 +272,24 @@ jobs:
             printf 'patch emu repository url: %s\n' "$EMU_URL"
             printf 'patch emu branch: %s\n' "$TARGET_BRANCH"
             printf '%s\n' '---'
+
             cat /tmp/oscam-emu.patch
-          } > emu/oscam-emu.patch
+
+          } > ../emu/oscam-emu.patch
 
           echo "=========================================="
           echo "PATCH ERSTELLT"
           echo "=========================================="
 
-          echo "Basis: $BASE_COMMIT"
-          echo "Ziel:  $TARGET_COMMIT"
+          echo "Basis:   $BASE_COMMIT"
+          echo "Ziel:    $TARGET_COMMIT"
           echo "Version: $VERSION"
 
-          echo "Patchgröße:"
-          wc -c emu/oscam-emu.patch
-
-          echo "Patchgröße in MB:"
-          du -h emu/oscam-emu.patch
+          wc -c ../emu/oscam-emu.patch
+          du -h ../emu/oscam-emu.patch
 
       # ============================================================
-      # Patch-Zeilenenden normalisieren und kontrollieren
+      # Patch-Zeilenenden normalisieren
       # ============================================================
 
       - name: Normalize patch line endings
@@ -300,7 +303,7 @@ jobs:
           patch_file = Path("emu/oscam-emu.patch")
 
           if not patch_file.is_file():
-              raise SystemExit("FEHLER: oscam-emu.patch wurde nicht gefunden.")
+              raise SystemExit("FEHLER: Patch nicht gefunden.")
 
           data = patch_file.read_bytes()
 
@@ -313,18 +316,15 @@ jobs:
           lf = data.count(b"\n") - crlf
           cr = data.count(b"\r") - crlf
 
-          print("Patch-Zeilenenden:")
           print("CRLF:", crlf)
           print("LF:", lf)
-          print("Einzelne CR:", cr)
+          print("CR:", cr)
           print("Dateigröße:", len(data), "Bytes")
 
           if crlf != 0 or cr != 0:
-              raise SystemExit(
-                  "FEHLER: Patch enthält noch CR-Zeichen."
-              )
+              raise SystemExit("FEHLER: Patch enthält CR-Zeichen.")
 
-          print("ERFOLG: Patch enthält ausschließlich LF.")
+          print("ERFOLG: Ausschließlich LF-Zeilenenden.")
           PY
 
       # ============================================================
@@ -333,53 +333,65 @@ jobs:
 
       - name: Commit patch
         shell: bash
+        env:
+          ACTIONS_TOKEN: ${{ secrets.ACTIONS_TOKEN }}
         run: |
           set -euo pipefail
 
-          cp emu/oscam-emu.patch /tmp/oscam-emu.patch.generated
+          EXPECTED_REMOTE="https://github.com/speedy005/oscam-emu-patch"
+
+          GENERATED_PATCH="/tmp/oscam-emu.patch.generated"
+
+          cp emu/oscam-emu.patch "$GENERATED_PATCH"
 
           cd emu
 
-          # ABSOLUTE SICHERHEITSPRÜFUNG VOR JEDEM PUSH
+          normalize_url() {
+            local url="${1%/}"
+            url="${url%.git}"
+            printf '%s' "${url,,}"
+          }
 
-          EXPECTED_REMOTE="https://github.com/speedy005/oscam-emu-patch.git"
-          ACTUAL_REMOTE=$(git remote get-url origin)
+          verify_remote() {
+            local actual
+            actual=$(git remote get-url origin)
+
+            echo "Push-Ziel: $actual"
+
+            if [ "$(normalize_url "$actual")" != \
+                 "$(normalize_url "$EXPECTED_REMOTE")" ]; then
+
+              echo "FEHLER: Falsches Push-Ziel!"
+              exit 1
+            fi
+
+            echo "OK: Push-Ziel verifiziert."
+          }
 
           echo "=========================================="
           echo "LETZTE PUSH-ZIEL-KONTROLLE"
           echo "=========================================="
 
-          echo "Erwartet:  $EXPECTED_REMOTE"
-          echo "Tatsächlich: $ACTUAL_REMOTE"
-
-          if [ "$ACTUAL_REMOTE" != "$EXPECTED_REMOTE" ]; then
-            echo "FEHLER: Push wird aus Sicherheitsgründen abgebrochen!"
-            exit 1
-          fi
-
-          echo "OK: Ausschließlich oscam-emu-patch ist als Ziel erlaubt."
+          verify_remote
 
           git config user.name "oscam-emu-bot"
           git config user.email "187860193+oscam-emu-bot@users.noreply.github.com"
 
           for attempt in 1 2 3; do
 
+            echo "=========================================="
             echo "Push-Versuch $attempt von 3"
+            echo "=========================================="
+
+            verify_remote
 
             git fetch origin master
 
             git reset --hard origin/master
 
-            # Sicherstellen, dass das Remote weiterhin korrekt ist.
+            verify_remote
 
-            ACTUAL_REMOTE=$(git remote get-url origin)
-
-            if [ "$ACTUAL_REMOTE" != "$EXPECTED_REMOTE" ]; then
-              echo "FEHLER: Push-Ziel wurde verändert. Abbruch."
-              exit 1
-            fi
-
-            cp /tmp/oscam-emu.patch.generated oscam-emu.patch
+            cp "$GENERATED_PATCH" oscam-emu.patch
 
             git add oscam-emu.patch
 
@@ -388,9 +400,11 @@ jobs:
               exit 0
             fi
 
-            VERSION=$(bash ../config.sh --oscam-version)
+            VERSION=$(bash ../source/config.sh --oscam-version)
 
             git commit -m "Sync patch with $VERSION"
+
+            verify_remote
 
             if git push origin HEAD:master; then
               echo "Patch erfolgreich übertragen."
@@ -398,6 +412,8 @@ jobs:
             fi
 
             echo "Push fehlgeschlagen. Neuer Versuch."
+
+            sleep 2
 
           done
 
